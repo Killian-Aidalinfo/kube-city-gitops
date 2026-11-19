@@ -30,7 +30,8 @@ echo "   -> faites pointer kube-city.<domaine> et argocd.<domaine> sur cette IP,
 
 echo "== 2/4 cert-manager (certificats Let's Encrypt) =="
 helm upgrade --install cert-manager jetstack/cert-manager -n cert-manager --create-namespace \
-  --version "$CERT_MANAGER_VERSION" --set crds.enabled=true --wait --timeout 6m
+  --version "$CERT_MANAGER_VERSION" --set crds.enabled=true \
+  --set resources.requests.cpu=20m --set resources.requests.memory=64Mi --wait --timeout 6m
 kubectl apply -f bootstrap/cert-manager-clusterissuer.yaml
 
 echo "== 3/4 Argo CD (moteur GitOps) =="

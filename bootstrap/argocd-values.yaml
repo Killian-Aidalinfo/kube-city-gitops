@@ -1,0 +1,53 @@
+# Argo CD, le moteur GitOps : il lit CE dépôt et applique ce qu'il y trouve.
+# helm upgrade --install argocd argo/argo-cd -n argocd --create-namespace \
+#   --version 10.18.1 -f deploy/bootstrap/argocd-values.yaml
+
+global:
+  domain: argocd.killian-s.lab-cesi.fr
+
+configs:
+  params:
+    # Argo CD parle en HTTP derrière Traefik, qui porte le TLS.
+    # Sans cela : boucle de redirection HTTPS.
+    server.insecure: true
+  cm:
+    # Fuseau des horodatages dans l'interface.
+    timeout.reconciliation: 180s
+
+server:
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt
+    tls: true
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 384Mi }
+
+controller:
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 768Mi }
+
+repoServer:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+redis:
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { memory: 192Mi }
+
+applicationSet:
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { memory: 192Mi }
+
+# Pas d'authentification externe ni de notifications sur ce cluster :
+# autant ne pas faire tourner les pods correspondants (3 nœuds play2-nano).
+dex:
+  enabled: false
+notifications:
+  enabled: false

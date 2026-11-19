@@ -1,0 +1,25 @@
+# Application « racine » (app-of-apps) : la seule qu'on applique à la main.
+# Elle surveille le dossier apps/ de ce dépôt et crée toutes les autres.
+#   kubectl apply -f apps/root.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Killian-Aidalinfo/kube-city-gitops.git
+    targetRevision: main
+    path: apps
+    directory:
+      recurse: true
+      exclude: root.yaml      # l'app racine ne se gère pas elle-même
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=false]

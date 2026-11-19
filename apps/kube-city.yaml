@@ -1,0 +1,35 @@
+# Le jeu lui-même : chart du dépôt applicatif, valeurs de ce dépôt.
+# Vague 2 : déployé après Redis.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-city
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://github.com/Killian-Aidalinfo/kube-city-gitops.git
+      targetRevision: main
+      ref: values
+    - repoURL: https://github.com/Killian-Aidalinfo/kube-city.git
+      targetRevision: main
+      path: chart/kube-city
+      helm:
+        releaseName: jeu
+        valueFiles:
+          - $values/values/kube-city.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-city
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: { duration: 15s, factor: 2, maxDuration: 3m }

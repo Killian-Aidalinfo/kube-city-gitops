@@ -1,0 +1,43 @@
+# Redis + Sentinel pour Kube City (chart Bitnami redis 28.x, clés vérifiées avec `helm show values`).
+# Installation : voir README.md, étape 5.
+# Le mot de passe vient d'un Secret créé à la main (redis-auth, clé REDIS_PASSWORD) : rien en clair ici.
+architecture: replication
+
+auth:
+  enabled: true
+  sentinel: true                       # les Sentinel demandent aussi le mot de passe
+  existingSecret: redis-auth
+  existingSecretPasswordKey: REDIS_PASSWORD
+
+sentinel:
+  enabled: true                        # 1 conteneur Sentinel DANS chaque pod Redis
+  masterSet: mymaster
+  quorum: 2                            # 2 Sentinel sur 3 doivent être d'accord pour basculer
+  downAfterMilliseconds: 2000          # maître muet 2 s = déclaré en panne
+  failoverTimeout: 10000
+  parallelSyncs: 1
+  automateClusterRecovery: true        # si tous les pods tombent en même temps, le cluster se reforme seul
+  redisShutdownWaitFailover: true      # un maître arrêté proprement (drain) provoque la bascule AVANT de s'éteindre
+  resourcesPreset: nano
+
+# En mode Sentinel, les 3 nœuds Redis sont décrits par la section « replica »
+# (le premier démarre maître, puis Sentinel décide).
+replica:
+  replicaCount: 3
+  podAntiAffinityPreset: hard          # 1 pod Redis par nœud : un nœud perdu = 1 Redis perdu, pas 2
+  persistence:
+    enabled: true
+    storageClass: scw-bssd
+    accessModes: ["ReadWriteOnce"]     # RWO : un disque PAR pod (voir README, « pourquoi RWO »)
+    size: 10Gi
+  pdb:
+    create: true
+    maxUnavailable: 1                  # un drain ne peut jamais vider 2 Redis d'un coup
+  resourcesPreset: small
+  terminationGracePeriodSeconds: 30
+
+commonConfiguration: |-
+  # AOF toutes les secondes : on perd au plus 1 s de données si tout tombe
+  appendonly yes
+  appendfsync everysec
+  save ""

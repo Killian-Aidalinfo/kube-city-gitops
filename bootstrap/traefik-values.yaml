@@ -1,0 +1,54 @@
+# Traefik, contrôleur d'Ingress du cluster. Installé AVANT tout le reste :
+# c'est lui qui crée le LoadBalancer dont on tire l'IP publique pour le DNS.
+# helm upgrade --install traefik traefik/traefik -n traefik --create-namespace \
+#   --version 42.4.1 -f deploy/gitops/bootstrap/traefik-values.yaml
+
+# 3 réplicas : l'ingress ne doit pas être un point unique de panne.
+# Un par nœud (topologySpread), comme les pods de jeu.
+deployment:
+  replicas: 3
+
+topologySpreadConstraints:
+  - topologyKey: kubernetes.io/hostname
+    maxSkew: 1
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: traefik
+        app.kubernetes.io/instance: traefik-traefik
+
+# Crée l'IngressClass « traefik », celle que demande chart/kube-city (ingress.className).
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+
+service:
+  spec:
+    type: LoadBalancer
+    # Local : le client garde son IP réelle (utile pour les journaux et le filtrage),
+    # et le LB n'envoie que vers les nœuds qui portent un Traefik.
+    externalTrafficPolicy: Local
+
+ports:
+  web:
+    # Tout le HTTP part en HTTPS. Let's Encrypt suit la redirection pendant
+    # le défi HTTP-01, donc cela ne gêne pas cert-manager.
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  # websecure (443) garde les valeurs par défaut du chart : TLS activé,
+  # et les WebSocket du jeu passent sans réglage particulier.
+  traefik:
+    expose:
+      default: false
+
+# Petit cluster (play2-nano) : on reste sobre.
+resources:
+  requests: { cpu: 100m, memory: 64Mi }
+  limits: { memory: 192Mi }
+
+log:
+  level: INFO

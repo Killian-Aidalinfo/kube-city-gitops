@@ -1,0 +1,29 @@
+# Valeurs Kube City pour le cluster k8s-par-killian-test (Kapsule fr-par-1, 3 nœuds).
+# Reprend deploy/kapsule/values-kube-city.yaml du dépôt applicatif, avec Traefik et HTTPS.
+replicaCount: 3
+
+strategy: { maxUnavailable: 0, maxSurge: 1 }
+
+podDisruptionBudget: { enabled: true, minAvailable: 2 }
+
+topologySpread:
+  enabled: true
+  node: DoNotSchedule      # 3 nœuds, 3 pods : un pod de jeu par nœud
+  zone: ScheduleAnyway     # cluster mono-zone : sans effet
+
+autoscaling: { enabled: true, minReplicas: 3, maxReplicas: 6, cpu: 70 }
+
+redis:
+  enabled: false           # pas de Redis simple : on utilise celui de Sentinel (app « redis »)
+  sentinel:
+    hosts: "redis-node-0.redis-headless.kube-city.svc.cluster.local:26379,redis-node-1.redis-headless.kube-city.svc.cluster.local:26379,redis-node-2.redis-headless.kube-city.svc.cluster.local:26379"
+    masterName: mymaster
+    passwordSecret: redis-auth   # Secret créé à la main (clé REDIS_PASSWORD), jamais dans ce dépôt
+
+ingress:
+  enabled: true
+  className: traefik
+  host: kube-city.killian-s.lab-cesi.fr
+  tls: true
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt

@@ -1,0 +1,38 @@
+# Valeurs Kube City pour le cluster k8s-par-killian-test (Kapsule fr-par-1, 3 nœuds).
+# Reprend deploy/kapsule/values-kube-city.yaml du dépôt applicatif, avec Traefik et HTTPS.
+# Pas d'image.tag ici : le chart retombe sur son appVersion, qui suit la release
+# (v1.1.0 -> ghcr.io/killian-aidalinfo/kube-city:1.1.0). Vérifier que Chart.yaml
+# bumpe version ET appVersion à chaque release : une appVersion oubliée redéploierait
+# l'ancienne image (le 1.0.0 d'avant Redis Sentinel plantait au démarrage).
+
+replicaCount: 3
+
+strategy: { maxUnavailable: 0, maxSurge: 1 }
+
+podDisruptionBudget: { enabled: true, minAvailable: 2 }
+
+topologySpread:
+  enabled: true
+  # DoNotSchedule marche très bien à 2 nœuds : maxSkew 1 autorise 2/1 pour 3 pods
+  # et 3/3 pour 6. Sans lui, le HPA avait empilé les 6 pods sur un seul nœud.
+  node: DoNotSchedule
+  zone: ScheduleAnyway     # cluster mono-zone : sans effet
+
+autoscaling: { enabled: true, minReplicas: 3, maxReplicas: 6, cpu: 70 }
+
+redis:
+  enabled: false
+  # Plus de Sentinel : le maître est désigné par un Lease Kubernetes (voir
+  # redis-lease/README.md) et le Service kc-redis-master suit le label du maître.
+  # Le client n'a donc qu'une URL à connaître, et plus de liste de Sentinel.
+  existingSecret: redis-url      # Secret créé à la main, clé REDIS_URL (mot de passe compris)
+  sentinel:
+    hosts: ""                    # vide : le chart choisit alors REDIS_URL
+
+ingress:
+  enabled: true
+  className: traefik
+  host: game.grp-test.lab-cesi.fr
+  tls: true
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt

@@ -1,0 +1,132 @@
+# Redis à deux nœuds, sans Sentinel : l'arbitre est le serveur d'API Kubernetes.
+#
+#   kubectl apply -f redis-lease.yaml
+#   (le Secret redis-auth, clé REDIS_PASSWORD, doit déjà exister dans le namespace)
+#
+# Qui écrit : le Service « kc-redis-master », dont le sélecteur est le label
+# redis-role=master posé par le promoteur. Il suit le maître sans que personne
+# n'ait à reconfigurer le client.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: kc-redis, namespace: kube-city }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: kc-redis, namespace: kube-city }
+rules:
+  # Le bail : l'arbitrage tient entièrement dans ces verbes.
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]
+  # Le label redis-role, que suit le Service du maître. « list » sert au nouveau
+  # maître pour retirer ce label à un pod resté sur un nœud en panne.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: kc-redis, namespace: kube-city }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: kc-redis }
+subjects:
+  - { kind: ServiceAccount, name: kc-redis, namespace: kube-city }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: kc-redis, namespace: kube-city }
+spec:
+  clusterIP: None                     # headless : donne un nom DNS stable à chaque pod
+  selector: { app: kc-redis }
+  publishNotReadyAddresses: true      # un réplica en retard doit rester joignable du maître
+  ports: [{ name: redis, port: 6379, targetPort: redis }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: kc-redis-master, namespace: kube-city }
+spec:
+  # Sélecteur sur le LABEL, pas sur un nom de pod : le promoteur déplace le label,
+  # le Service suit. C'est ce que le jeu utilise comme adresse de Redis.
+  selector: { app: kc-redis, redis-role: master }
+  ports: [{ name: redis, port: 6379, targetPort: redis }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: kc-redis, namespace: kube-city }
+spec:
+  maxUnavailable: 1                   # un drain ne peut pas emporter les deux
+  selector: { matchLabels: { app: kc-redis } }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: kc-redis, namespace: kube-city }
+spec:
+  serviceName: kc-redis
+  replicas: 2
+  podManagementPolicy: Parallel
+  selector: { matchLabels: { app: kc-redis } }
+  template:
+    metadata:
+      labels: { app: kc-redis }
+    spec:
+      serviceAccountName: kc-redis
+      terminationGracePeriodSeconds: 30
+      affinity:
+        podAntiAffinity:
+          # « required » : un Redis par nœud, sans négociation. Avec deux pods et
+          # deux nœuds, perdre un nœud ne peut emporter qu'un seul Redis.
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector: { matchLabels: { app: kc-redis } }
+      containers:
+        - name: redis
+          image: redis:8.2-alpine
+          # Le mot de passe vient du Secret et n'apparaît pas dans ce fichier.
+          # masterauth : un réplica doit s'authentifier auprès du maître.
+          command: ["sh", "-c"]
+          args:
+            - exec redis-server --requirepass "$REDIS_PASSWORD" --masterauth "$REDIS_PASSWORD"
+              --appendonly yes --appendfsync everysec --save ""
+              --replica-announce-ip "$POD_NAME.kc-redis.$POD_NAMESPACE.svc.cluster.local"
+          ports: [{ name: redis, containerPort: 6379 }]
+          env:
+            - { name: POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
+            - { name: POD_NAMESPACE, valueFrom: { fieldRef: { fieldPath: metadata.namespace } } }
+            - { name: REDIS_PASSWORD, valueFrom: { secretKeyRef: { name: redis-auth, key: REDIS_PASSWORD } } }
+          readinessProbe:
+            exec: { command: ["sh", "-c", 'redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping | grep -q PONG'] }
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            tcpSocket: { port: redis }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 96Mi }
+            limits: { memory: 256Mi }
+          volumeMounts: [{ name: data, mountPath: /data }]
+        - name: promoteur
+          image: node:22-alpine
+          command: ["node", "/app/promoteur.mjs"]
+          env:
+            - { name: POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
+            - { name: POD_NAMESPACE, valueFrom: { fieldRef: { fieldPath: metadata.namespace } } }
+            # L'UID distingue DEUX VIES d'un même pod : un StatefulSet recrée
+            # kc-redis-1 sous le même nom, mais avec un UID neuf.
+            - { name: POD_UID, valueFrom: { fieldRef: { fieldPath: metadata.uid } } }
+            - { name: HEADLESS_SERVICE, value: kc-redis }
+            - { name: LEASE_SECONDS, value: "10" }
+            - { name: TICK_MS, value: "2000" }
+            - { name: REDIS_PASSWORD, valueFrom: { secretKeyRef: { name: redis-auth, key: REDIS_PASSWORD } } }
+          resources:
+            requests: { cpu: 20m, memory: 48Mi }
+            limits: { memory: 128Mi }
+          volumeMounts: [{ name: promoteur, mountPath: /app }]
+      volumes:
+        - name: promoteur
+          configMap: { name: kc-redis-promoteur }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]   # un disque PAR pod : chaque Redis a sa copie
+        resources: { requests: { storage: 2Gi } }

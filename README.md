@@ -56,6 +56,10 @@ apps/          les Applications Argo CD (ce qu'Argo CD gère tout seul ensuite)
 values/        les valeurs Helm lues par les Applications
   redis.yaml
   kube-city.yaml
+redis-lease/   Redis en HA sur DEUX nœuds, arbitré par un Lease Kubernetes
+               (hors apps/ : Argo CD ne l'applique pas, c'est une brique à reprendre)
+clusters/
+  grp-test/    le cluster d'un groupe : 2 nœuds, Helm direct, sans Argo CD
 ```
 
 Les Applications sont **multi-sources** : le chart vient d'ailleurs (dépôt applicatif ou registre Bitnami),

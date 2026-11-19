@@ -1,0 +1,50 @@
+# Traefik, contrôleur d'Ingress du cluster. Installé AVANT tout le reste :
+# c'est lui qui crée le LoadBalancer dont on tire l'IP publique pour le DNS.
+# helm upgrade --install traefik traefik/traefik -n traefik --create-namespace \
+#   --version 42.4.1 -f traefik-values.yaml
+
+# DaemonSet : exactement un Traefik par nœud, toujours.
+# Avec externalTrafficPolicy Local, le LoadBalancer n'envoie du trafic qu'aux nœuds
+# qui ont un Traefik LOCAL — un nœud sans Traefik jette les paquets qu'il reçoit.
+# Un Deployment peut concentrer ses réplicas sur un nœud après une panne ; pas un DaemonSet.
+deployment:
+  kind: DaemonSet
+
+# Crée l'IngressClass « traefik », celle que demande chart/kube-city (ingress.className).
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+
+service:
+  annotations:
+    service.beta.kubernetes.io/scw-loadbalancer-ip-ids: "27d7327d-603e-4c4b-9a70-7abba10f2624"
+    service.beta.kubernetes.io/scw-loadbalancer-zone: "fr-par-1"
+  spec:
+    type: LoadBalancer
+    # Local : le client garde son IP réelle (utile pour les journaux et le filtrage),
+    # et le LB n'envoie que vers les nœuds qui portent un Traefik.
+    externalTrafficPolicy: Local
+
+ports:
+  web:
+    # Tout le HTTP part en HTTPS. Let's Encrypt suit la redirection pendant
+    # le défi HTTP-01, donc cela ne gêne pas cert-manager.
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  # websecure (443) garde les valeurs par défaut du chart : TLS activé,
+  # et les WebSocket du jeu passent sans réglage particulier.
+  traefik:
+    expose:
+      default: false
+
+# Petit cluster (play2-nano) : on reste sobre.
+resources:
+  requests: { cpu: 100m, memory: 64Mi }
+  limits: { memory: 192Mi }
+
+log:
+  level: INFO

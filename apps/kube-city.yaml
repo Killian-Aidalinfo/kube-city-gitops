@@ -16,7 +16,10 @@ spec:
       targetRevision: main
       ref: values
     - repoURL: https://github.com/Killian-Aidalinfo/kube-city.git
-      targetRevision: main
+      # Le TAG de release, pas « main » : un tag = un chart = une image, et main
+      # continue d'avancer après la publication. Pour monter de version, on change
+      # cette ligne (et seulement elle) : c'est la trace de ce qui est en ligne.
+      targetRevision: v1.1.0
       path: chart/kube-city
       helm:
         releaseName: jeu

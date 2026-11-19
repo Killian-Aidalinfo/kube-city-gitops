@@ -23,7 +23,7 @@ on ne lance pas de `helm install` à la main.
 Internet
    │
    ▼
-Traefik ───────────── contrôleur d'Ingress, 3 réplicas (un par nœud), LoadBalancer Scaleway
+Traefik ───────────── contrôleur d'Ingress, DaemonSet (un par nœud), LoadBalancer Scaleway
    │                  termine le TLS, redirige tout le HTTP vers le HTTPS
    ├── cert-manager ── demande et renouvelle les certificats Let's Encrypt (défi HTTP-01 via Traefik)
    ├── Argo CD ─────── lit ce dépôt, crée et resynchronise les applications
@@ -31,8 +31,10 @@ Traefik ───────────── contrôleur d'Ingress, 3 réplic
 ```
 
 * **Traefik** crée l'IngressClass `traefik`, celle que demandent les Ingress du jeu et d'Argo CD.
-  Trois réplicas : l'entrée du cluster ne doit pas être un point unique de panne.
-  `externalTrafficPolicy: Local` garde l'IP réelle du joueur.
+  En **DaemonSet** : avec `externalTrafficPolicy: Local`, le LoadBalancer n'envoie du trafic
+  qu'aux nœuds portant un Traefik local, et un nœud sans Traefik jette ce qu'il reçoit.
+  Un Deployment à 3 réplicas s'était reconcentré 2/0/1 après la perte d'un nœud le 19/11/2026 ;
+  le DaemonSet rend ce cas impossible. `Local` garde par ailleurs l'IP réelle du joueur.
 * **cert-manager** répond aux annotations `cert-manager.io/cluster-issuer: letsencrypt`.
   Deux autorités : `letsencrypt-staging` pour répéter sans brûler le quota, `letsencrypt` pour de vrai.
 * **Argo CD** est en `server.insecure` : c'est Traefik qui porte le HTTPS, sinon on obtient une

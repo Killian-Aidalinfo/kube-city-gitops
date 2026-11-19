@@ -1,21 +1,17 @@
 # Traefik, contrôleur d'Ingress du cluster. Installé AVANT tout le reste :
 # c'est lui qui crée le LoadBalancer dont on tire l'IP publique pour le DNS.
 # helm upgrade --install traefik traefik/traefik -n traefik --create-namespace \
-#   --version 42.4.1 -f deploy/gitops/bootstrap/traefik-values.yaml
+#   --version 42.4.1 -f bootstrap/traefik-values.yaml
 
-# 3 réplicas : l'ingress ne doit pas être un point unique de panne.
-# Un par nœud (topologySpread), comme les pods de jeu.
+# DaemonSet : exactement un Traefik par nœud, toujours.
+# Pourquoi pas un Deployment à 3 réplicas : avec externalTrafficPolicy Local, le
+# LoadBalancer n'envoie du trafic qu'aux nœuds qui ont un Traefik LOCAL — un nœud
+# sans Traefik jette les paquets qu'il reçoit. Or, après la perte d'un nœud le
+# 19/11/2026, les 3 réplicas s'étaient reconcentrés 2/0/1 : un nœud se retrouvait
+# sans Traefik. Un DaemonSet rend cette situation impossible par construction,
+# et suit tout seul l'ajout ou le retrait d'un nœud.
 deployment:
-  replicas: 3
-
-topologySpreadConstraints:
-  - topologyKey: kubernetes.io/hostname
-    maxSkew: 1
-    whenUnsatisfiable: ScheduleAnyway
-    labelSelector:
-      matchLabels:
-        app.kubernetes.io/name: traefik
-        app.kubernetes.io/instance: traefik-traefik
+  kind: DaemonSet
 
 # Crée l'IngressClass « traefik », celle que demande chart/kube-city (ingress.className).
 ingressClass:

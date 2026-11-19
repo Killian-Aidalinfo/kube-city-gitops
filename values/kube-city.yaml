@@ -1,5 +1,11 @@
 # Valeurs Kube City pour le cluster k8s-par-killian-test (Kapsule fr-par-1, 3 nœuds).
 # Reprend deploy/kapsule/values-kube-city.yaml du dépôt applicatif, avec Traefik et HTTPS.
+# Image épinglée sur un commit précis de main : « latest » rendrait le déploiement
+# non reproductible, et l'appVersion du chart (1.0.0) est antérieure au support
+# de Redis Sentinel — le jeu se connecterait à localhost et redémarrerait en boucle.
+image:
+  tag: sha-1adb227         # Killian-Aidalinfo/kube-city@1adb227
+
 replicaCount: 3
 
 strategy: { maxUnavailable: 0, maxSurge: 1 }

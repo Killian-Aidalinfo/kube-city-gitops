@@ -19,6 +19,15 @@ ingressClass:
   isDefaultClass: true
 
 service:
+  # Le LoadBalancer Scaleway teste le NodePort du service, pas le healthCheckNodePort
+  # qu'expose externalTrafficPolicy: Local. Ses valeurs par défaut (5 s de délai,
+  # 5 s d'attente, 5 essais) laissent donc jusqu'à ~25 s de trafic partir vers un
+  # nœud qui n'a plus de Traefik — ce qui s'est vu pendant un drain : des échecs
+  # par à-coups sur ~3 minutes. Resserré à ~6 s, sans contrepartie.
+  annotations:
+    service.beta.kubernetes.io/scw-loadbalancer-health-check-delay: "2s"
+    service.beta.kubernetes.io/scw-loadbalancer-health-check-timeout: "1s"
+    service.beta.kubernetes.io/scw-loadbalancer-health-check-max-retries: "2"
   spec:
     type: LoadBalancer
     # Local : le client garde son IP réelle (utile pour les journaux et le filtrage),

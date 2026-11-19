@@ -30,6 +30,11 @@ Traefik ───────────── contrôleur d'Ingress, DaemonSet
    └── Kube City ───── 3 pods de jeu + Redis Sentinel (3 pods), namespace « kube-city »
 ```
 
+* Le **health check du LoadBalancer** est resserré par annotations (2 s / 1 s / 2 essais au lieu
+  de 5 / 5 / 5). Scaleway teste le NodePort du service, pas le `healthCheckNodePort` qu'expose
+  `externalTrafficPolicy: Local` : un nœud drainé restait donc dans la rotation ~25 s en jetant
+  les paquets. Mesuré sur un reboot de nœud, à conditions identiques :
+  **94,81 % → 99,67 %** de requêtes servies pour un nouvel arrivant (11 échecs → 1).
 * **Traefik** crée l'IngressClass `traefik`, celle que demandent les Ingress du jeu et d'Argo CD.
   En **DaemonSet** : avec `externalTrafficPolicy: Local`, le LoadBalancer n'envoie du trafic
   qu'aux nœuds portant un Traefik local, et un nœud sans Traefik jette ce qu'il reçoit.
